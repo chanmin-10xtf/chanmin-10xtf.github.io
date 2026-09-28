@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hello World</title>
+  <style>
+    :root { --bg: #f7f5ef; --ink: #1f2a24; --accent: #3f7d5a; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #141a17; --ink: #e8efe9; --accent: #7fc49b; }
+    }
+    * { box-sizing: border-box; margin: 0; }
+    body {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      padding: 16px;
+    }
+    h1 {
+      font-size: clamp(3rem, 12vw, 8rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1;
+      text-align: center;
+    }
+    h1 span { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <h1>Hello, <span>World</span></h1>
+</body>
+</html>
