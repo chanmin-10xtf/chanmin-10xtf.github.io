@@ -4,6 +4,7 @@
   const API = "https://openrouter.ai/api/alpha/decisions";
   const MODEL = "typesafe/jev-1.13";
   const SCENARIOS = window.SCENARIOS;
+  const TYPES = ["noul", "choice", "score"];
   const $ = (sel, root = document) => root.querySelector(sel);
 
   // ─── 저장소 — 사생활 모드·차단 환경에서도 페이지가 돌아가게 전부 감싼다 ───
@@ -26,14 +27,11 @@
     for (const kid of kids.flat()) if (kid != null) el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
     return el;
   }
-  const svg = (tag, attrs = {}) => {
-    const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
-    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
-    return el;
-  };
   const pretty = (v) => JSON.stringify(v, null, 2);
   const pct = (x) => `${Math.round(x * 100)}%`;
   const fmt = (x, d = 2) => (Number.isInteger(x) ? String(x) : x.toFixed(d));
+  const typesOf = (sc) => TYPES.filter((t) => Object.values(sc.questions).some((q) => q.type === t));
+  const shapeOf = (v) => (typeof v === "string" ? "문자열" : Array.isArray(v) ? "배열" : "객체");
 
   let toastTimer;
   function toast(msg) {
@@ -71,10 +69,11 @@
 
   // ─── 테마 ───
   const themes = ["auto", "light", "dark"];
+  const themeLabel = { auto: "테마: 시스템", light: "테마: 밝게", dark: "테마: 어둡게" };
   function applyTheme(t) {
     if (t === "auto") document.documentElement.removeAttribute("data-theme");
     else document.documentElement.setAttribute("data-theme", t);
-    $("#theme-btn").title = { auto: "테마: 시스템", light: "테마: 밝게", dark: "테마: 어둡게" }[t];
+    $("#theme-btn").textContent = themeLabel[t];
   }
   let theme = store.get("localStorage", "jev.theme") || "auto";
   applyTheme(theme);
@@ -82,30 +81,51 @@
     theme = themes[(themes.indexOf(theme) + 1) % themes.length];
     store.set("localStorage", "jev.theme", theme);
     applyTheme(theme);
-    toast($("#theme-btn").title);
   });
 
-  // ─── 목록 ───
+  // ─── 목록 · 타입 필터 ───
   const rail = $("#rail");
   const menuBtn = $("#menu-btn");
+  let typeFilter = "all";
+  let current = null;
+
+  function renderTypes() {
+    const box = $("#types");
+    box.replaceChildren();
+    [["all", "전체"], ...TYPES.map((t) => [t, t])].forEach(([v, label]) => {
+      const n = v === "all" ? SCENARIOS.length : SCENARIOS.filter((s) => typesOf(s).includes(v)).length;
+      box.append(h("button", {
+        type: "button", "aria-pressed": String(typeFilter === v), title: `${label} (${n})`,
+        onclick: () => { typeFilter = v; renderTypes(); renderList($("#search").value); },
+      }, h("span", { text: label }), h("small", { text: String(n) })));
+    });
+  }
+
   function renderList(filter = "") {
     const list = $("#list");
     list.replaceChildren();
     const q = filter.trim().toLowerCase();
-    let lastCat = null;
-    SCENARIOS.forEach((sc, i) => {
-      const hay = `${sc.title} ${sc.blurb} ${sc.cat}`.toLowerCase();
-      if (q && !hay.includes(q)) return;
-      if (sc.cat !== lastCat) { list.append(h("div", { class: "cat", text: sc.cat })); lastCat = sc.cat; }
-      list.append(h("button", {
+    // 시나리오가 파일 두 곳에 나뉘어 있어 같은 분류가 흩어진다 — 첫 등장 순서대로 분류별로 모은다.
+    const cats = [...new Set(SCENARIOS.map((s) => s.cat))];
+    cats.forEach((cat) => {
+      const rows = SCENARIOS.filter((sc) => {
+        if (sc.cat !== cat) return false;
+        const types = typesOf(sc);
+        if (typeFilter !== "all" && !types.includes(typeFilter)) return false;
+        return !q || `${sc.title} ${sc.blurb} ${sc.cat} ${types.join(" ")}`.toLowerCase().includes(q);
+      });
+      if (!rows.length) return;
+      list.append(h("div", { class: "cat", text: cat }));
+      rows.forEach((sc) => { const types = typesOf(sc); list.append(h("button", {
         class: "sc-link", type: "button", "data-id": sc.id,
-        "aria-current": current && current.id === sc.id ? "true" : "false",
+        "aria-current": String(current?.id === sc.id),
         onclick: () => { location.hash = sc.id; closeRail(); },
-      }, h("span", { class: "no", text: String(i + 1).padStart(2, "0") }), h("span", { text: sc.title })));
+      }, h("span", { text: sc.title }), h("span", { class: "sc-types" }, types.map((t) => h("span", { class: "t", text: t }))))); });
     });
     if (!list.children.length) list.append(h("p", { class: "rail-foot", text: "맞는 시나리오가 없습니다." }));
   }
   $("#search").addEventListener("input", (e) => renderList(e.target.value));
+
   function closeRail() { rail.classList.remove("open"); menuBtn.setAttribute("aria-expanded", "false"); }
   menuBtn.addEventListener("click", () => {
     const open = !rail.classList.contains("open");
@@ -127,11 +147,7 @@
       const res = await fetch(API, {
         method: "POST",
         signal: ctrl.signal,
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "X-Title": "Jev Playground",
-        },
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "X-Title": "Jev Playground" },
         body: JSON.stringify({ model: MODEL, state, questions }),
       });
       const text = await res.text();
@@ -155,72 +171,54 @@
     }
   }
 
-  // ─── 계기판 ───
-  const CX = 170, CY = 170, R = 140;
-  const onArc = (t, r) => {
-    const a = Math.PI * (1 - t);
-    return [CX + r * Math.cos(a), CY - r * Math.sin(a)];
-  };
-  function meter(value, range, thresholds, caption, display) {
-    const [lo, hi] = range;
-    const t = Math.max(0, Math.min(1, (value - lo) / (hi - lo || 1)));
-    const el = svg("svg", { class: "meter", viewBox: "0 -14 340 214", role: "img", "aria-label": `${caption} ${display}` });
-    const arc = `M ${CX - R} ${CY} A ${R} ${R} 0 0 1 ${CX + R} ${CY}`;
-    el.append(svg("path", { class: "track", d: arc }));
-    const fill = svg("path", { class: "fill", d: arc, pathLength: "100", "stroke-dasharray": "100 100", "stroke-dashoffset": "100" });
-    el.append(fill);
-    thresholds.forEach((th) => {
-      const tt = (th - lo) / (hi - lo || 1);
-      const [x1, y1] = onArc(tt, R - 16);
-      const [x2, y2] = onArc(tt, R + 16);
-      const [lx, ly] = onArc(tt, R + 28);
-      el.append(svg("line", { class: "tick", x1, y1, x2, y2 }));
-      const label = svg("text", { class: "tick-label", x: lx, y: ly + 3, "text-anchor": "middle" });
-      label.textContent = range[1] === 1 ? pct(th) : fmt(th, 1);
-      el.append(label);
-    });
-    [0, 1].forEach((edge) => {
-      const [x, y] = onArc(edge, R + 26);
-      const lab = svg("text", { class: "tick-label", x, y: y + 16, "text-anchor": "middle" });
-      lab.textContent = range[1] === 1 ? pct(edge) : fmt(edge ? hi : lo, 0);
-      el.append(lab);
-    });
-    const needle = svg("line", { class: "needle", x1: CX, y1: CY, x2: CX, y2: CY - R + 22, style: "transform: rotate(-90deg)" });
-    el.append(needle, svg("circle", { class: "hub", cx: CX, cy: CY, r: 7 }));
-    const big = svg("text", { class: "big", x: CX, y: CY - 42 });
-    big.textContent = display;
-    const cap = svg("text", { class: "cap", x: CX, y: CY - 20 });
-    cap.textContent = caption;
-    el.append(big, cap);
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      fill.setAttribute("stroke-dashoffset", String(100 - t * 100));
-      needle.style.transform = `rotate(${-90 + t * 180}deg)`;
-    }));
-    return el;
-  }
-
+  // ─── 게이지 — 판정 규칙이 쓰는 값 하나를 가로 막대와 기준선으로 ───
   function gaugeFor(sc, questions, answers) {
     const g = sc.gauge;
     const a = answers?.[g.q];
     if (!a) return null;
-    if (a.type === "noul") return meter(a.noul, [0, 1], g.thresholds, `${g.q} · 예일 확률`, pct(a.noul));
-    if (a.type === "score") {
+    let value, range, label, display;
+    if (a.type === "noul") { value = a.noul; range = [0, 1]; label = `${g.q} · 예일 확률`; display = pct(a.noul); }
+    else if (a.type === "score") {
       const n = Array.isArray(questions[g.q]?.criteria) ? questions[g.q].criteria.length : 2;
-      return meter(a.score, g.range || [0, n - 1], g.thresholds, `${g.q} · 점수`, fmt(a.score));
-    }
-    if (a.type === "choice") return meter(a.confidence, [0, 1], g.thresholds, `${g.q} · ${a.choice} 확신`, pct(a.confidence));
-    return null;
+      value = a.score; range = g.range || [0, n - 1]; label = `${g.q} · 점수`; display = fmt(a.score);
+    } else if (a.type === "choice") { value = a.confidence; range = [0, 1]; label = `${g.q} · 「${a.choice}」 확신`; display = pct(a.confidence); }
+    else return null;
+    const [lo, hi] = range;
+    const pos = (x) => `${Math.max(0, Math.min(1, (x - lo) / (hi - lo || 1))) * 100}%`;
+    const asLabel = (x) => (hi === 1 ? pct(x) : fmt(x, 1));
+    return h("div", { class: "gauge" },
+      h("div", { class: "gauge-top" }, h("span", { text: label }), h("b", { text: display })),
+      h("div", { class: "g-track", role: "img", "aria-label": `${label} ${display}` },
+        h("div", { class: "g-fill", style: `width:${pos(value)}` }),
+        g.thresholds.map((th) => h("i", { class: "g-tick", style: `left:${pos(th)}`, title: `기준선 ${asLabel(th)}` }))),
+      h("div", { class: "g-scale" },
+        h("span", { class: "edge-l", style: "left:0", text: asLabel(lo) }),
+        g.thresholds.map((th) => h("span", { style: `left:${pos(th)}`, text: asLabel(th) })),
+        h("span", { class: "edge-r", style: "left:100%", text: asLabel(hi) })));
+  }
+
+  // 타입별 응답 형식 설명 — 어떤 필드를 읽으면 되는지 카드마다 적는다.
+  const FORMAT = {
+    noul: ["noul", "= “예(true)” 일 확률"],
+    choice: ["choice", "= 고른 보기 · probabilities = 보기별 확률 · confidence = 고른 답에 몰린 정도"],
+    score: ["score", "= 등급의 기대값(소수) · probabilities = 등급별 확률 · legend = 등급 설명"],
+  };
+
+  function barRow(name, p, top) {
+    return h("div", { class: `bar-row${top ? " top" : ""}`, title: name },
+      h("span", { class: "nm", text: name }),
+      h("span", { class: "bar" }, h("i", { style: `width:${Math.max(0, Math.min(1, p)) * 100}%` })),
+      h("span", { class: "pct", text: pct(p) }));
   }
 
   function answerCard(name, a) {
-    const card = h("div", { class: "ans" });
-    let val = "";
-    if (a.type === "noul") val = pct(a.noul);
-    else if (a.type === "score") val = fmt(a.score);
-    else if (a.type === "choice") val = a.choice;
-    card.append(h("div", { class: "ans-head" },
-      h("span", {}, h("span", { class: "ans-name", text: name }), " ", h("span", { class: "ans-type", text: a.type })),
-      h("span", { class: "ans-val", text: val })));
+    const val = a.type === "noul" ? pct(a.noul) : a.type === "score" ? fmt(a.score) : a.type === "choice" ? a.choice : "";
+    const f = FORMAT[a.type];
+    const card = h("div", { class: "ans" },
+      h("div", { class: "ans-head" },
+        h("span", {}, h("span", { class: "ans-name", text: name }), " ", h("span", { class: "t", text: a.type })),
+        h("span", { class: "ans-val", text: val })),
+      f ? h("div", { class: "ans-fmt" }, h("code", { text: f[0] }), ` ${f[1]}`) : null);
     if (a.type === "noul") {
       card.append(barRow("true", a.noul, a.noul >= 0.5), barRow("false", 1 - a.noul, a.noul < 0.5));
     } else if (a.probabilities) {
@@ -230,146 +228,146 @@
         : Object.entries(a.probabilities).sort((x, y) => y[1] - x[1]);
       const topKey = a.type === "choice" ? a.choice : [...entries].sort((x, y) => y[1] - x[1])[0]?.[0];
       entries.forEach(([k, p]) => {
-        const label = a.type === "score" && a.legend?.[k] ? `${k} · ${a.legend[k]}` : k;
+        // criteria 가 이미 "0: …" 처럼 번호로 시작하면 번호를 다시 붙이지 않는다.
+        const lg = a.type === "score" ? a.legend?.[k] : null;
+        const label = lg ? (lg.trim().startsWith(k) ? lg : `${k} · ${lg}`) : k;
         card.append(barRow(label, p, k === String(topKey)));
       });
-      if (a.confidence != null) card.append(h("div", { class: "legend", text: `확신 ${pct(a.confidence)}` }));
+      if (a.confidence != null) card.append(h("div", { class: "legend", text: `confidence ${pct(a.confidence)}` }));
     }
     return card;
   }
-  function barRow(name, p, top) {
-    const bar = h("span", { class: "bar" }, h("i", { style: "width:0%" }));
-    requestAnimationFrame(() => requestAnimationFrame(() => { bar.firstChild.style.width = `${Math.max(0, Math.min(1, p)) * 100}%`; }));
-    return h("div", { class: `bar-row${top ? " top" : ""}`, title: name },
-      h("span", { class: "nm", text: name }), bar, h("span", { class: "pct", text: pct(p) }));
-  }
 
   // ─── 시나리오 화면 ───
-  let current = null;
-  let sampleIndex = 0;
-
-  function parseEditor(ta, errEl, label) {
-    try {
-      const v = JSON.parse(ta.value);
-      ta.classList.remove("bad");
-      errEl.textContent = "";
-      return v;
-    } catch (e) {
-      ta.classList.add("bad");
-      errEl.textContent = `${label} JSON 형식 오류: ${e.message}`;
-      return undefined;
-    }
-  }
-
-  function curlFor(state, questions) {
-    const body = JSON.stringify({ model: MODEL, state, questions }, null, 2).replace(/'/g, "'\\''");
-    return `curl ${API} \\\n  -H "Authorization: Bearer $OPENROUTER_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '${body}'`;
-  }
-
   async function copy(text, okMsg) {
     try { await navigator.clipboard.writeText(text); toast(okMsg); }
     catch { toast("복사하지 못했습니다 — 브라우저가 클립보드 접근을 막았습니다"); }
   }
-
-  function decideSafe(sc, answers) {
-    try { return sc.decide(answers); } catch { return null; }
+  function curlFor(state, questions) {
+    const body = JSON.stringify({ model: MODEL, state, questions }, null, 2).replace(/'/g, "'\\''");
+    return `curl ${API} \\\n  -H "Authorization: Bearer $OPENROUTER_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '${body}'`;
   }
+  const decideSafe = (sc, answers) => { try { return sc.decide(answers); } catch { return null; } };
 
   function renderScenario(sc) {
     current = sc;
-    sampleIndex = 0;
-    const idx = SCENARIOS.indexOf(sc);
+    let sampleIndex = 0;
+    let mode = "json"; // json | text — text 는 입력을 그대로 문자열 state 로 보낸다
     const root = $("#scenario");
-    root.replaceChildren();
 
-    const stateTa = h("textarea", { class: "editor", spellcheck: "false", "aria-label": "state 입력(JSON)" });
+    const stateTa = h("textarea", { class: "editor", spellcheck: "false", "aria-label": "state 입력" });
     const stateErr = h("div", { class: "err", role: "alert" });
     const qTa = h("textarea", { class: "editor q", spellcheck: "false", "aria-label": "questions(JSON)" });
     const qErr = h("div", { class: "err", role: "alert" });
     qTa.value = pretty(sc.questions);
     const result = h("div", { class: "card-body" });
     const batchBox = h("div");
+    const shapeTag = h("span", { class: "hint" });
+
+    const segJson = h("button", { type: "button", text: "JSON", onclick: () => setMode("json") });
+    const segText = h("button", { type: "button", text: "텍스트", onclick: () => setMode("text") });
+    function paintMode() {
+      segJson.setAttribute("aria-pressed", String(mode === "json"));
+      segText.setAttribute("aria-pressed", String(mode === "text"));
+      let shape = "문자열";
+      if (mode === "json") { try { shape = shapeOf(JSON.parse(stateTa.value)); } catch { shape = "JSON 형식 오류"; } }
+      shapeTag.textContent = `state: ${shape}`;
+    }
+    function setMode(next) {
+      if (next === mode) return;
+      if (next === "text") {
+        try { const v = JSON.parse(stateTa.value); stateTa.value = typeof v === "string" ? v : stateTa.value; } catch { /* 그대로 둔다 */ }
+      } else {
+        stateTa.value = pretty(stateTa.value);
+      }
+      mode = next;
+      stateTa.classList.remove("bad");
+      stateErr.textContent = "";
+      paintMode();
+    }
+    stateTa.addEventListener("input", paintMode);
 
     const chips = h("div", { class: "samples", role: "group", "aria-label": "샘플 입력" });
     function loadSample(i) {
       sampleIndex = i;
-      stateTa.value = pretty(sc.samples[i].state);
+      const st = sc.samples[i].state;
+      mode = typeof st === "string" ? "text" : "json";
+      stateTa.value = typeof st === "string" ? st : pretty(st);
       stateTa.classList.remove("bad");
       stateErr.textContent = "";
       [...chips.children].forEach((c, j) => c.setAttribute("aria-pressed", String(j === i)));
+      paintMode();
     }
     sc.samples.forEach((s, i) => chips.append(h("button", { class: "chip", type: "button", onclick: () => loadSample(i), text: s.label })));
+    const sampleText = (i) => (typeof sc.samples[i].state === "string" ? sc.samples[i].state : pretty(sc.samples[i].state));
+
+    function readState() {
+      if (mode === "text") return stateTa.value;
+      try { const v = JSON.parse(stateTa.value); stateTa.classList.remove("bad"); stateErr.textContent = ""; return v; }
+      catch (e) { stateTa.classList.add("bad"); stateErr.textContent = `state JSON 형식 오류: ${e.message} — 그냥 글을 보내려면 「텍스트」를 고르세요.`; return undefined; }
+    }
+    function readQuestions() {
+      try { const v = JSON.parse(qTa.value); qTa.classList.remove("bad"); qErr.textContent = ""; return v; }
+      catch (e) { qTa.classList.add("bad"); qErr.textContent = `questions JSON 형식 오류: ${e.message}`; return undefined; }
+    }
 
     const qSummary = h("div", { class: "qsum" });
     const refreshQSummary = () => {
       qSummary.replaceChildren();
-      try {
-        Object.entries(JSON.parse(qTa.value)).forEach(([k, v]) => qSummary.append(h("span", { class: "qtag", text: `${k} · ${v.type}` })));
-      } catch { qSummary.append(h("span", { class: "qtag", text: "JSON 형식 오류" })); }
+      try { Object.entries(JSON.parse(qTa.value)).forEach(([k, v]) => qSummary.append(h("span", { class: "qtag", text: `${k} · ${v.type}` }))); }
+      catch { qSummary.append(h("span", { class: "qtag", text: "JSON 형식 오류" })); }
     };
     qTa.addEventListener("input", refreshQSummary);
     refreshQSummary();
 
-    const runBtn = h("button", { class: "run-btn", type: "button", "data-needs-key": true, onclick: () => runOne() },
-      "판정하기", h("span", { class: "kbd", text: "⌘/Ctrl ↵" }));
-    const batchBtn = h("button", { class: "ghost-btn", type: "button", "data-needs-key": true, onclick: () => runBatch(), text: `샘플 ${sc.samples.length}개 모두 돌리기` });
+    const runBtn = h("button", { class: "btn primary", type: "button", "data-needs-key": true, onclick: () => runOne(), text: "판정하기" });
+    const batchBtn = h("button", { class: "btn", type: "button", "data-needs-key": true, onclick: () => runBatch(), text: `샘플 ${sc.samples.length}개 모두` });
 
     const left = h("section", { class: "card" },
-      h("div", { class: "card-head" },
-        h("span", { class: "card-title", text: "입력 · state" }),
-        h("button", { class: "ghost-btn", type: "button", text: "샘플 되돌리기", onclick: () => loadSample(sampleIndex) })),
+      h("div", { class: "card-head" }, h("b", { text: "입력 (state)" }), h("button", { class: "btn", type: "button", text: "샘플 되돌리기", onclick: () => loadSample(sampleIndex) })),
       h("div", { class: "card-body" },
-        chips, stateTa, stateErr,
+        chips,
+        h("div", { class: "mode" }, shapeTag, h("span", { class: "seg", role: "group", "aria-label": "입력 형식" }, segJson, segText)),
+        stateTa, stateErr,
         h("details", { class: "qbox" },
-          h("summary", {}, "Jev 에게 묻는 질문 (questions)"),
+          h("summary", { text: "질문 보기·고치기 (questions)" }),
           qSummary, qTa, qErr,
           h("div", { class: "actions" },
-            h("button", { class: "ghost-btn", type: "button", text: "질문 원래대로", onclick: () => { qTa.value = pretty(sc.questions); qTa.classList.remove("bad"); qErr.textContent = ""; refreshQSummary(); } }))),
+            h("button", { class: "btn", type: "button", text: "질문 원래대로", onclick: () => { qTa.value = pretty(sc.questions); qTa.classList.remove("bad"); qErr.textContent = ""; refreshQSummary(); } }))),
         h("div", { class: "actions" },
           runBtn, batchBtn,
           h("button", {
-            class: "ghost-btn", type: "button", text: "curl 복사",
-            onclick: () => {
-              const s = parseEditor(stateTa, stateErr, "state");
-              const q = parseEditor(qTa, qErr, "questions");
-              if (s !== undefined && q !== undefined) copy(curlFor(s, q), "curl 명령을 복사했습니다 (키는 $OPENROUTER_API_KEY 자리)");
-            },
+            class: "btn", type: "button", text: "curl 복사",
+            onclick: () => { const s = readState(); const q = readQuestions(); if (s !== undefined && q !== undefined) copy(curlFor(s, q), "curl 명령을 복사했습니다 (키는 $OPENROUTER_API_KEY 자리)"); },
           }),
-          h("button", { class: "ghost-btn", type: "button", text: "링크 복사", onclick: () => copy(location.href, "이 시나리오 링크를 복사했습니다") }))));
+          h("button", { class: "btn", type: "button", text: "링크 복사", onclick: () => copy(location.href, "이 시나리오 링크를 복사했습니다") }),
+          h("span", { class: "hint", text: "⌘/Ctrl + Enter 로 실행" }))));
 
     const right = h("section", { class: "card" },
-      h("div", { class: "card-head" }, h("span", { class: "card-title", text: "Jev 판정" }), h("span", { class: "card-title mono", text: MODEL })),
+      h("div", { class: "card-head" }, h("b", { text: "Jev 판정" }), h("span", { class: "mono", text: MODEL })),
       result);
 
     function showEmpty() {
-      result.replaceChildren(h("div", { class: "empty" },
-        h("div", { class: "big-dial", text: "—" }),
-        h("p", { text: apiKey ? "샘플을 고르거나 입력을 고친 뒤 「판정하기」를 누르세요." : "먼저 위에 OpenRouter 키를 넣으세요. 키는 openrouter.ai/keys 에서 만듭니다." })));
-    }
-
-    function readInputs() {
-      const s = parseEditor(stateTa, stateErr, "state");
-      const q = parseEditor(qTa, qErr, "questions");
-      if (s === undefined || q === undefined) return null;
-      if (!apiKey) { toast("OpenRouter 키를 먼저 넣으세요"); keyInput.focus(); return null; }
-      return { s, q };
+      result.replaceChildren(h("div", { class: "empty", text: apiKey ? "샘플을 고르거나 입력을 고친 뒤 「판정하기」를 누르세요." : "먼저 위에 OpenRouter 키를 넣으세요. 키는 openrouter.ai/keys 에서 만듭니다." }));
     }
 
     let busy = false;
     async function runOne() {
       if (busy) return;
-      const inp = readInputs();
-      if (!inp) return;
+      const s = readState();
+      const q = readQuestions();
+      if (s === undefined || q === undefined) return;
+      if (!apiKey) { toast("OpenRouter 키를 먼저 넣으세요"); keyInput.focus(); return; }
       busy = true;
       runBtn.disabled = true;
-      result.replaceChildren(h("div", { class: "empty" }, h("div", { class: "big-dial", text: "…" }), h("p", { text: "판정 중" })));
+      result.replaceChildren(h("div", { class: "empty", text: "판정 중…" }));
       try {
-        const { body, ms } = await ask(inp.s, inp.q);
+        const { body, ms } = await ask(s, q);
         // 샘플을 그대로 돌렸을 때만 기대값과 비교한다 — 입력을 고쳤으면 기대값이 더 이상 맞지 않는다.
-        const pristine = stateTa.value === pretty(sc.samples[sampleIndex].state) && qTa.value === pretty(sc.questions);
-        renderResult(body, ms, pristine ? sc.samples[sampleIndex].expect : null, inp.q);
+        const pristine = stateTa.value === sampleText(sampleIndex) && qTa.value === pretty(sc.questions);
+        renderResult(body, ms, pristine ? sc.samples[sampleIndex].expect : null, q);
         // 한 열 배치에서는 결과 카드가 입력 아래라 화면 밖에 있다 — 결과로 내려 준다.
-        if (window.matchMedia("(max-width: 1080px)").matches) right.scrollIntoView({ block: "start", behavior: "smooth" });
+        if (window.matchMedia("(max-width: 1000px)").matches) right.scrollIntoView({ block: "start", behavior: "smooth" });
       } catch (e) {
         result.replaceChildren(h("div", { class: "problem", text: e.message }));
       } finally {
@@ -381,46 +379,42 @@
     function renderResult(body, ms, expect, questions) {
       const answers = body.answers || {};
       const d = decideSafe(sc, answers);
-      const out = [];
-      if (d) {
-        out.push(h("div", { class: `verdict ${d.tone}` },
-          h("div", {}, h("div", { class: "v-label", text: "판정 규칙 적용 결과" }), h("div", { class: "v-action", text: d.action })),
-          expect ? h("span", { class: `match ${d.action === expect ? "hit" : "miss"}`, text: d.action === expect ? "기대와 일치" : `기대와 다름 · 기대: ${expect}` }) : null));
-      } else {
-        out.push(h("div", { class: "verdict warn" },
-          h("div", {}, h("div", { class: "v-label", text: "판정 규칙" }), h("div", { class: "v-action", text: "질문이 바뀌어 규칙을 적용하지 않음" }))));
-      }
-      const g = gaugeFor(sc, questions, answers);
-      if (g) out.push(h("div", { class: "meter-wrap" }, g));
-      out.push(h("div", { class: "answers" }, Object.entries(answers).map(([k, a]) => answerCard(k, a))));
       const u = body.usage || {};
-      out.push(h("div", { class: "usage" },
-        h("span", {}, "지연 ", h("b", { text: `${ms}ms` })),
-        h("span", {}, "입력 토큰 ", h("b", { text: String(u.input_tokens ?? "—") })),
-        h("span", {}, "비용 ", h("b", { text: u.cost != null ? `$${u.cost.toFixed(7)}` : "—" })),
-        h("span", {}, "모델 ", h("b", { text: body.model || MODEL }))));
-      out.push(h("details", { class: "raw" }, h("summary", { text: "원본 응답 보기" }), h("pre", { class: "json", text: pretty(body) })));
-      result.replaceChildren(...out);
+      result.replaceChildren(
+        d
+          ? h("div", { class: `verdict ${d.tone}` },
+              h("div", {}, h("div", { class: "v-label", text: "판정 규칙 적용 결과" }), h("div", { class: "v-action", text: d.action })),
+              expect ? h("span", { class: `match ${d.action === expect ? "hit" : "miss"}`, text: d.action === expect ? "기대와 일치" : `기대와 다름 · 기대: ${expect}` }) : null)
+          : h("div", { class: "verdict warn" }, h("div", {}, h("div", { class: "v-label", text: "판정 규칙" }), h("div", { class: "v-action", text: "질문이 바뀌어 규칙을 적용하지 않음" }))),
+        gaugeFor(sc, questions, answers) || "",
+        h("div", { class: "answers" }, Object.entries(answers).map(([k, a]) => answerCard(k, a))),
+        h("div", { class: "usage" },
+          h("span", {}, "지연 ", h("b", { text: `${ms}ms` })),
+          h("span", {}, "입력 토큰 ", h("b", { text: String(u.input_tokens ?? "—") })),
+          h("span", {}, "비용 ", h("b", { text: u.cost != null ? `$${u.cost.toFixed(7)}` : "—" })),
+          h("span", {}, "모델 ", h("b", { text: body.model || MODEL }))),
+        h("details", { class: "raw" }, h("summary", { text: "원본 응답(JSON)" }), h("pre", { class: "json", text: pretty(body) })));
     }
 
     async function runBatch() {
       if (busy) return;
-      const q = parseEditor(qTa, qErr, "questions");
+      const q = readQuestions();
       if (q === undefined) return;
       if (!apiKey) { toast("OpenRouter 키를 먼저 넣으세요"); keyInput.focus(); return; }
       busy = true;
       batchBtn.disabled = true;
       const edited = qTa.value !== pretty(sc.questions);
       const tbody = h("tbody");
-      const summary = h("span", { class: "card-title", text: "실행 중…" });
+      const summary = h("span", { text: "실행 중…" });
       batchBox.replaceChildren(h("section", { class: "card batch" },
-        h("div", { class: "card-head" }, h("span", { class: "card-title", text: "샘플 일괄 실행" }), summary),
+        h("div", { class: "card-head" }, h("b", { text: "샘플 일괄 실행" }), summary),
         h("div", { class: "table-scroll" }, h("table", { class: "btable" },
           h("thead", {}, h("tr", {}, ["샘플", "기대", "판정", sc.gauge.q, "결과", "지연"].map((t) => h("th", { text: t })))),
           tbody))));
       let hit = 0, cost = 0;
       for (const s of sc.samples) {
-        const tr = h("tr", {}, h("td", { text: s.label }), h("td", { text: edited ? "—" : s.expect }), h("td", { colspan: "4", class: "num", text: "…" }));
+        const pending = h("td", { colspan: "4", class: "num", text: "…" });
+        const tr = h("tr", {}, h("td", { text: s.label }), h("td", { text: edited ? "—" : s.expect }), pending);
         tbody.append(tr);
         try {
           const { body, ms } = await ask(s.state, q);
@@ -430,41 +424,34 @@
           const v = !a ? "—" : a.type === "noul" ? pct(a.noul) : a.type === "score" ? fmt(a.score) : `${a.choice} ${pct(a.confidence)}`;
           const ok = !edited && d && d.action === s.expect;
           if (ok) hit++;
-          tr.lastChild.remove();
+          pending.remove();
           tr.append(
             h("td", {}, d ? h("span", { class: `pill ${d.tone}`, text: d.action }) : "—"),
             h("td", { class: "num", text: v }),
             h("td", {}, edited ? h("span", { class: "pill muted", text: "질문 수정됨" }) : h("span", { class: `pill ${ok ? "ok" : "crit"}`, text: ok ? "일치" : "다름" })),
             h("td", { class: "num", text: `${ms}ms` }));
         } catch (e) {
-          tr.lastChild.textContent = e.message;
-          tr.lastChild.className = "";
+          pending.textContent = e.message;
+          pending.className = "";
         }
       }
-      summary.textContent = edited
-        ? `${sc.samples.length}건 · $${cost.toFixed(6)}`
-        : `${hit}/${sc.samples.length} 일치 · $${cost.toFixed(6)}`;
+      summary.textContent = edited ? `${sc.samples.length}건 · $${cost.toFixed(6)}` : `${hit}/${sc.samples.length} 일치 · $${cost.toFixed(6)}`;
       busy = false;
       batchBtn.disabled = !apiKey;
     }
 
-    const onKey = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); runOne(); }
-    };
+    const onKey = (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); runOne(); } };
     stateTa.addEventListener("keydown", onKey);
     qTa.addEventListener("keydown", onKey);
 
-    root.append(
-      h("div", { class: "reveal" },
-        h("header", { class: "sc-head" },
-          h("div", { class: "sc-no", text: String(idx + 1).padStart(2, "0") }),
-          h("div", {},
-            h("div", { class: "sc-cat", text: sc.cat }),
-            h("h2", { text: sc.title }),
-            h("p", { class: "sc-blurb", text: sc.blurb }),
-            h("div", { class: "rule-line" }, h("b", { text: "판정 규칙" }), h("span", { text: sc.rule })))),
-        h("div", { class: "bench" }, left, right),
-        batchBox));
+    root.replaceChildren(
+      h("header", { class: "sc-head" },
+        h("div", { class: "sc-meta" }, h("span", { text: sc.cat }), typesOf(sc).map((t) => h("span", { class: "t", text: t }))),
+        h("h2", { text: sc.title }),
+        h("p", { class: "sc-blurb", text: sc.blurb }),
+        h("p", { class: "rule-line" }, h("b", { text: "판정 규칙" }), sc.rule)),
+      h("div", { class: "bench" }, left, right),
+      batchBox);
 
     loadSample(0);
     showEmpty();
@@ -481,6 +468,7 @@
   }
   window.addEventListener("hashchange", route);
 
+  renderTypes();
   renderList();
   route();
   syncKey();

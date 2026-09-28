@@ -418,7 +418,7 @@ window.SCENARIOS = [
   {
     id: "model-router",
     cat: "LLM·에이전트 운영",
-    title: "모델 라우팅 (싼 모델 / 비싼 모델)",
+    title: "모델 라우팅",
     blurb: "질문 난이도를 보고 가벼운 모델로 충분한지, 추론형 대형 모델이 필요한지 고른다.",
     rule: "'복잡' 확신 50% 이상이면 대형 모델 · 아니면 경량 모델",
     gauge: { q: "difficulty", thresholds: [0.5] },
