@@ -1,35 +1,113 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hello World</title>
+  <title>Jev Lab</title>
+  <meta name="description" content="TypeSafe Jev(System One 모델)를 여러 과제에 붙여 본 실험 모음">
   <style>
-    :root { --bg: #f7f5ef; --ink: #1f2a24; --accent: #3f7d5a; }
+    :root { --bg: #f7f5ef; --panel: #ffffff; --ink: #1f2a24; --muted: #5d6b63; --line: #e2ddd0; --accent: #3f7d5a; --tag: #eef3ee; --lock: #8a6d3b; --lock-bg: #f6efe2; }
     @media (prefers-color-scheme: dark) {
-      :root { --bg: #141a17; --ink: #e8efe9; --accent: #7fc49b; }
+      :root { --bg: #141a17; --panel: #1b231f; --ink: #e8efe9; --muted: #9aa9a0; --line: #2a352f; --accent: #7fc49b; --tag: #22302a; --lock: #d8b779; --lock-bg: #2b271d; }
     }
     * { box-sizing: border-box; margin: 0; }
-    body {
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      background: var(--bg);
-      color: var(--ink);
-      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-      padding: 16px;
-    }
-    h1 {
-      font-size: clamp(3rem, 12vw, 8rem);
-      font-weight: 800;
-      letter-spacing: -0.04em;
-      line-height: 1;
-      text-align: center;
-    }
+    body { background: var(--bg); color: var(--ink); font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", sans-serif; padding: 48px 16px 64px; }
+    main { max-width: 860px; margin: 0 auto; }
+    h1 { font-size: clamp(2.2rem, 7vw, 3.6rem); font-weight: 800; letter-spacing: -0.04em; line-height: 1.05; }
     h1 span { color: var(--accent); }
+    .lead { color: var(--muted); margin: 14px 0 36px; max-width: 640px; }
+    h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 36px 0 12px; }
+    .list { display: grid; gap: 14px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+    .card header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 12px; }
+    .card h3 { font-size: 19px; letter-spacing: -0.01em; }
+    .badge { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--tag); color: var(--accent); white-space: nowrap; }
+    .badge.private { background: var(--lock-bg); color: var(--lock); }
+    .card p { margin-top: 8px; }
+    .card ul { margin: 10px 0 0; padding-left: 18px; color: var(--muted); font-size: 14px; }
+    .links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .links a { font-size: 14px; color: var(--accent); text-decoration: none; border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px; }
+    .links a:hover { border-color: var(--accent); }
+    .links a.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
+    code { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--tag); padding: 1px 5px; border-radius: 4px; }
+    .notes li { margin: 4px 0; }
+    footer { margin-top: 48px; color: var(--muted); font-size: 13px; }
   </style>
 </head>
 <body>
-  <h1>Hello, <span>World</span></h1>
+<main>
+  <h1><span>Jev</span> Lab</h1>
+  <p class="lead">
+    TypeSafe의 System One 모델 <b>Jev</b>(<code>typesafe/jev-1.13</code>)를 여러 과제에 붙여 보고,
+    어디에 잘 맞고 어디서 한계가 드러나는지 기록한 실험 모음입니다.
+  </p>
+
+  <h2>바로 써 보기</h2>
+  <div class="list">
+    <article class="card">
+      <header><h3>Jev Playground</h3><span class="badge">공개 · 웹에서 실행</span></header>
+      <p>브라우저에서 시나리오를 골라 Jev의 <code>noul</code> · <code>choice</code> · <code>score</code> 판정을 바로 확인합니다. 시나리오 35개.</p>
+      <ul><li>OpenRouter API 키를 입력하면 요청이 브라우저에서 openrouter.ai로 바로 갑니다. 키는 그 브라우저에만 남습니다.</li></ul>
+      <div class="links">
+        <a class="primary" href="./jev-playground/">열기</a>
+        <a href="https://github.com/chanmin-10xtf/jev-playground">저장소</a>
+      </div>
+    </article>
+  </div>
+
+  <h2>로컬 실험 프로젝트</h2>
+  <div class="list">
+    <article class="card">
+      <header><h3>jev-game</h3><span class="badge private">비공개 저장소</span><span class="badge">Node</span></header>
+      <p>Jev가 체스를 둡니다. 수를 몇 수 앞까지 읽는 계산이 없는 모델이 어디까지 가는지 봅니다.</p>
+      <ul>
+        <li>모드: Jev vs Stockfish, Jev vs Jev, 사람 vs Jev</li>
+        <li>Stockfish 난이도 사다리 벤치마크: 승·무·패, 추정 Elo, 수 품질(ACPL)·블런더</li>
+        <li>전술 힌트 조건(없음 / 규칙 계산 / Jev 계산)과 전략 지시문 편집기</li>
+        <li>국면 문제집(52문제)으로 Jev와 일반 LLM 비교</li>
+      </ul>
+      <div class="links">
+        <a href="https://github.com/chanmin-10xtf/jev-game">저장소</a>
+      </div>
+    </article>
+
+    <article class="card">
+      <header><h3>jev-benchmark</h3><span class="badge private">비공개 저장소</span><span class="badge">Python</span></header>
+      <p>Jev가 원래 겨냥하는 판정 과제에서 일반 LLM과 비교합니다. 같은 입력, 같은 질문, 같은 판정 규칙을 씁니다.</p>
+      <ul>
+        <li>판정 과제 10종, 케이스 83개: 수집 가치, 민감정보, 프롬프트 인젝션, RAG 관련성, 도구 호출 게이트, 보안 경보 분류 등</li>
+        <li>지표: 정확도, 비싼 실수, 무효 응답, 평균·p95 지연, 1,000건당 비용</li>
+        <li>웹 화면(키 입력창)과 CLI, 키 없이 실제 Jev 기록을 재생하는 모드</li>
+      </ul>
+      <div class="links">
+        <a href="https://github.com/chanmin-10xtf/jev-benchmark">저장소</a>
+      </div>
+    </article>
+
+    <article class="card">
+      <header><h3>jev-ingest-filter</h3><span class="badge private">비공개 저장소</span><span class="badge">Python</span></header>
+      <p>jev-benchmark의 과제 원본입니다. 파이프라인 앞단 판정 필터로 Jev를 쓰는 유즈케이스를 정의하고 실제 Jev로 실행한 결과를 담았습니다.</p>
+      <ul>
+        <li>유즈케이스마다 질문, 판정 규칙, 비싼 실수 기준, 합성 케이스</li>
+        <li>정규식 규칙과 Jev 비교, 입력 길이에 따른 토큰·한도 측정</li>
+      </ul>
+      <div class="links">
+        <a href="https://github.com/chanmin-10xtf/jev-ingest-filter">저장소</a>
+      </div>
+    </article>
+  </div>
+
+  <h2>지금까지 관찰한 것</h2>
+  <article class="card">
+    <ul class="notes" style="color:var(--ink);font-size:15px;margin:0">
+      <li><b>판정 과제</b>: 합성 케이스 83건에서 정답률 94%, 비싼 실수 1건, 평균 0.29초, 1,000건당 $0.022 (2026-09-28 실행 기록 기준).</li>
+      <li><b>체스, 힌트 없음</b>: 무작위로 두는 상대와 둔 판이 무승부로 끝났습니다. "백이 크게 우세"라고 판단하면서 킹 옆에 퀸을 공짜로 내준 수가 결정적이었습니다 (한 판 관찰).</li>
+      <li><b>체스, 규칙 계산 힌트</b>: 코드가 계산한 "이 수를 두면 무엇을 잃는가"를 선택지에 붙이자 직접 둔 대국에서 승률이 눈에 띄게 올랐습니다 (수치는 아직 집계 전).</li>
+      <li><b>정리</b>: Jev는 주어진 사실로 빠르게 판정하는 데 강합니다. 몇 수 앞을 읽는 계산은 코드가 하고 판단만 Jev에게 맡기는 구조가 맞습니다.</li>
+    </ul>
+  </article>
+
+  <footer>비공개 저장소 링크는 권한이 있는 계정에서만 열립니다. · <a href="https://github.com/chanmin-10xtf" style="color:inherit">github.com/chanmin-10xtf</a></footer>
+</main>
 </body>
 </html>
